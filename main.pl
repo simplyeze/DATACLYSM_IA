@@ -64,8 +64,3 @@ stampa_azione(("No Move", 0, 0, 0)) :- format('Gioca(No Move, 0, 0, 0)~n').
 stampa_azione((Card, "PlaySetting")) :- format('Gioca il nuovo Setting: ~w~n', [Card]).
 stampa_azione((Card, "PlayMethod")) :- format('Gioca il nuovo Method: ~w~n', [Card]).
 stampa_azione((Card, _, _, Slot)) :- format('Gioca(~w, ~w)~n', [Card, Slot]).
-
-    ->  format('Gioca(No Move, 0, 0, 0)~n')
-    ;   Azione = [(Card, _, _, Slot)]  % Se c'è una mossa valida
-    ->  format('Gioca(~w, ~w)~n', [Card, Slot])
-    ).
