@@ -1,17 +1,20 @@
-:- use_module(library(random)).  % Assicurarsi di avere accesso ai predicati random (SWI-Prolog)
+:- use_module(library(random)).  % Per l'uso di random_member/2
 
 % --- Carte nel deck ---
 troop(001, 1, 1).
 troop(002, 2, 1).
 troop(003, 0, 3).
 troop(004, 2, 1).
+% Aggiunta una quinta carta per il nemico, se necessario
+troop(005, 1, 2).
 
 % --- Stato del gioco ---
+% Il player possiede in mano le carte e i campi sono rappresentati come slot(NumeroSlot, IdCarta)
 game_state(hand_ia, [001, 001, 001, setting(101), method(201)]).
-game_state(field_ia, []).
-% In questo esempio il player ha già una carta nello slot 1 e nello slot 7
-game_state(field_enemy, []).
-% Il nemico ha una carta nello slot 2
+game_state(field_ia, [slot(1, 001), slot(3, 001)]).
+
+% Anche il nemico utilizza la stessa struttura, con ID numerici per le carte (es. 003)
+game_state(field_enemy, [slot(2, 003)]).
 game_state(field_setting, setting(102)).
 game_state(method_played, false).
 
@@ -22,7 +25,7 @@ decide_action(BestMoves) :-
     play_method(Hand, MethodMove),
     game_state(field_ia, Field),
     game_state(field_enemy, EnemyField),
-    % Si controlla se c'è una minaccia non coperta
+    % Verifica se c'è una minaccia non coperta
     find_defensive_slot(Field, EnemyField, DefensiveSlot),
     (   DefensiveSlot \= none ->
         select_best_move(Hand, DefensiveSlot, TroopMove),
@@ -53,7 +56,7 @@ play_method(_, []).
 % Per ogni slot occupato dal nemico, determina la colonna difensiva;
 % se nella colonna il player NON ha già una carta, si prova a scegliere uno slot libero.
 find_defensive_slot(Field, EnemyField, DefensiveSlot) :-
-    member(EnemySlot, EnemyField),
+    member(slot(EnemySlot, _), EnemyField),
     enemy_defense_column(EnemySlot, DefCol),
     % Se il player ha già una carta in quella colonna, la minaccia è coperta
     \+ defended_by_column(Field, DefCol),
@@ -66,17 +69,17 @@ find_offensive_slot(Field, EnemyField, AttackSlot) :-
     % Prima si considerano gli slot in prima linea (1-4)
     findall(Candidate, (
         member(Candidate, [1,2,3,4]),
-        \+ member(Candidate, Field),
-        \+ enemy_slot(Candidate, EnemyField)
+        \+ occupied_slot(Field, Candidate),
+        \+ enemy_slot(EnemyField, Candidate)
     ), OffensiveFrontSlots),
     (   OffensiveFrontSlots \= [] ->
             random_member(AttackSlot, OffensiveFrontSlots)
     ;   % Se non ci sono slot liberi in prima linea, si controlla la backrow (5-8)
         findall(Candidate, (
             member(Candidate, [5,6,7,8]),
-            \+ member(Candidate, Field)
+            \+ occupied_slot(Field, Candidate)
         ), OffensiveBackSlots),
-        ( OffensiveBackSlots \= [] ->
+        (   OffensiveBackSlots \= [] ->
                 random_member(AttackSlot, OffensiveBackSlots)
         ;   AttackSlot = none
         )
@@ -95,7 +98,7 @@ enemy_defense_column(7, 2).
 enemy_defense_column(4, 1).
 enemy_defense_column(8, 1).
 
-% Mappatura delle colonne per i player: ad esempio, la colonna 3 comprende gli slot 3 e 7.
+% Mappatura delle colonne per il player: ad esempio, la colonna 3 comprende gli slot 3 e 7.
 player_slots_in_column(1, [1,5]).
 player_slots_in_column(2, [2,6]).
 player_slots_in_column(3, [3,7]).
@@ -105,18 +108,33 @@ player_slots_in_column(4, [4,8]).
 defended_by_column(Field, Col) :-
     player_slots_in_column(Col, Slots),
     member(Slot, Slots),
-    member(Slot, Field),
+    occupied_slot(Field, Slot),
     !.
 
 % Seleziona uno slot libero in una data colonna per piazzare una troop, scegliendo in maniera pseudocasuale
 available_defensive_slot_in_column(Field, Col, Slot) :-
     player_slots_in_column(Col, Slots),
-    findall(S, (member(S, Slots), \+ member(S, Field)), AvailableSlots),
+    findall(S, (member(S, Slots), \+ occupied_slot(Field, S)), AvailableSlots),
     AvailableSlots \= [],
     random_member(Slot, AvailableSlots).
 
-% Predicato che verifica se il nemico occupa un dato slot
-enemy_slot(Index, EnemyField) :- member(Index, EnemyField).
+% --- Predicato ausiliario per verificare se uno slot è occupato nel Field ---
+occupied_slot(Field, Slot) :-
+    member(slot(Slot, _), Field).
+
+% --- Predicato per verificare se il nemico occupa un dato slot ---
+enemy_slot(EnemyField, Slot) :-
+    member(slot(Slot, _), EnemyField).
+
+% --- Mappatura classica per i mirrored_slot (eventualmente per altre logiche offensive) ---
+mirrored_slot(4, 1).
+mirrored_slot(8, 1).
+mirrored_slot(3, 2).
+mirrored_slot(7, 2).
+mirrored_slot(2, 3).
+mirrored_slot(6, 3).
+mirrored_slot(1, 4).
+mirrored_slot(5, 4).
 
 % --- Seleziona la mossa migliore per le Troop ---
 select_best_move(Hand, Slot, [(Card, ATK, HP, Slot)]) :-
