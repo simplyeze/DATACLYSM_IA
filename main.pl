@@ -2,19 +2,19 @@
 
 % --- Carte nel deck ---
 troop(001, 1, 1).
-troop(002, 2, 1).
+troop(002, 4, 3).
 troop(003, 0, 3).
-troop(004, 2, 1).
-% Aggiunta una quinta carta per il nemico, se necessario
-troop(005, 1, 2).
+troop(004, 0, 6).
+% Ad esempio, una carta extra per il nemico
+troop(005, 5, 5).
 
 % --- Stato del gioco ---
-% Il player possiede in mano le carte e i campi sono rappresentati come slot(NumeroSlot, IdCarta)
-game_state(hand_ia, [001, 001, 001, setting(101), method(201)]).
-game_state(field_ia, [slot(1, 001), slot(3, 001)]).
+% I campi (sia per l'IA che per il nemico) usano la struttura slot(NumeroSlot, IdCarta)
+game_state(hand_ia, [001, 002, 004, setting(101), method(201)]).
+game_state(field_ia, [slot(1, 001)]).
 
-% Anche il nemico utilizza la stessa struttura, con ID numerici per le carte (es. 003)
-game_state(field_enemy, [slot(2, 003)]).
+% Anche il nemico ora usa ID numerici (ad es. 003)
+game_state(field_enemy, [slot(2, 005)]).
 game_state(field_setting, setting(102)).
 game_state(method_played, false).
 
@@ -25,17 +25,21 @@ decide_action(BestMoves) :-
     play_method(Hand, MethodMove),
     game_state(field_ia, Field),
     game_state(field_enemy, EnemyField),
-    % Verifica se c'è una minaccia non coperta
-    find_defensive_slot(Field, EnemyField, DefensiveSlot),
-    (   DefensiveSlot \= none ->
-        select_best_move(Hand, DefensiveSlot, TroopMove),
-        debug_message("Slot difensivo scelto: ", DefensiveSlot)
-    ;   find_offensive_slot(Field, EnemyField, AttackSlot),
-        (   AttackSlot \= none ->
-            select_best_move(Hand, AttackSlot, TroopMove),
-            debug_message("Slot offensivo scelto: ", AttackSlot)
-        ;   TroopMove = []  % Nessuna azione possibile
-        )
+    % Determina lo slot in cui piazzare la carta, in base alla strategia difensiva o offensiva
+    (   find_defensive_slot(Field, EnemyField, ChosenSlot),
+        ChosenSlot \= none
+    ->  SelectedSlot = ChosenSlot,
+        debug_message("Slot difensivo scelto: ", SelectedSlot)
+    ;   find_offensive_slot(Field, EnemyField, ChosenSlot),
+        ChosenSlot \= none
+    ->  SelectedSlot = ChosenSlot,
+        debug_message("Slot offensivo scelto: ", SelectedSlot)
+    ;   SelectedSlot = none
+    ),
+    (   SelectedSlot \= none
+    ->  % Passa anche EnemyField all'euristica, così da poter valutare il bonus in base al nemico attaccato
+        select_best_move(Hand, SelectedSlot, EnemyField, TroopMove)
+    ;   TroopMove = []
     ),
     append([SettingMove, MethodMove, TroopMove], BestMoves),
     debug_message("Mosse scelte: ", BestMoves).
@@ -58,7 +62,6 @@ play_method(_, []).
 find_defensive_slot(Field, EnemyField, DefensiveSlot) :-
     member(slot(EnemySlot, _), EnemyField),
     enemy_defense_column(EnemySlot, DefCol),
-    % Se il player ha già una carta in quella colonna, la minaccia è coperta
     \+ defended_by_column(Field, DefCol),
     available_defensive_slot_in_column(Field, DefCol, DefensiveSlot),
     !.
@@ -126,7 +129,7 @@ occupied_slot(Field, Slot) :-
 enemy_slot(EnemyField, Slot) :-
     member(slot(Slot, _), EnemyField).
 
-% --- Mappatura classica per i mirrored_slot (eventualmente per altre logiche offensive) ---
+% --- Mappatura classica per i mirrored_slot ---
 mirrored_slot(4, 1).
 mirrored_slot(8, 1).
 mirrored_slot(3, 2).
@@ -136,22 +139,57 @@ mirrored_slot(6, 3).
 mirrored_slot(1, 4).
 mirrored_slot(5, 4).
 
+% Predicato per determinare lo slot nemico attaccato, dato lo slot IA.
+mirrored_enemy_slot(IA_Slot, EnemySlot) :-
+    mirrored_slot(EnemySlot, IA_Slot).
+
 % --- Seleziona la mossa migliore per le Troop ---
-select_best_move(Hand, Slot, [(Card, ATK, HP, Slot)]) :-
-    Slot \= none,
-    findall((Card, ATK, HP, Score),
+% Nota: il termine che raccoglie i dati ora è esplicitamente un 4-ple,
+% ad esempio: tuple(Card, ATK, HP, Score)
+select_best_move(Hand, IA_Slot, EnemyField, [(Card, ATK, HP, IA_Slot)]) :-
+    IA_Slot \= none,
+    findall(tuple(Card, ATK, HP, Score),
         ( member(Card, Hand),
           troop(Card, ATK, HP),
-          evaluate(Card, ATK, HP, Score)
+          evaluate(Card, ATK, HP, Score, IA_Slot, EnemyField)
         ),
         ScoredMoves),
-    sort(2, @>=, ScoredMoves, SortedMoves),
-    SortedMoves = [(Card, ATK, HP, _) | _],
-    debug_message("Giocata troop: ", (Card, ATK, HP, Slot)).
+    % Ordina in base al punteggio (Score) in ordine decrescente
+    predsort(compare_tuples, ScoredMoves, SortedMoves),
+    SortedMoves = [tuple(Card, ATK, HP, _) | _],
+    debug_message("Giocata troop: ", (Card, ATK, HP, IA_Slot)).
 
-% Valutazione della carta (semplice funzione di punteggio)
-evaluate(_Troop, ATK, HP, Score) :-
-    Score is ATK * 2 + HP.
+% --- Comparatore per predsort/3 ---
+% Se Score1 > Score2 allora il termine con Score1 deve comparire PRIMA, per questo restituiamo '<'
+compare_tuples(Order, tuple(_,_,_,Score1), tuple(_,_,_,Score2)) :-
+    ( Score1 > Score2 -> Order = '<'
+    ; Score1 < Score2 -> Order = '>'
+    ; Order = '='
+    ).
+
+% --- Nuova funzione di valutazione ---
+% La valutazione considera il punteggio base (ATK + HP) e, se esiste una carta nemica nell'enemy slot attaccato,
+% aggiunge un bonus:
+%   - Bonus +3 se ATK IA >= HP nemico
+%   - Altrimenti, bonus +2 se HP IA >= ATK nemico
+evaluate(_Card, ATK, HP, Score, IA_Slot, EnemyField) :-
+    BaseScore is ATK + HP,
+    (   attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP)
+    ->  ( (ATK >= EnemyHP)
+         -> Bonus = 3
+         ;  (HP > EnemyATK
+             -> Bonus = 2
+             ;  Bonus = 0)
+         )
+    ;   Bonus = 0
+    ),
+    Score is BaseScore + Bonus.
+
+% Predicato che determina le statistiche della carta nemica che verrebbe attaccata
+attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP) :-
+    mirrored_enemy_slot(IA_Slot, EnemySlot),
+    member(slot(EnemySlot, EnemyCard), EnemyField),
+    troop(EnemyCard, EnemyATK, EnemyHP).
 
 % --- Esecuzione e stampa delle mosse ---
 esegui(Azioni) :-
@@ -170,3 +208,4 @@ stampa_azione((Card, _, _, Slot)) :-
 % --- Funzione di debug ---
 debug_message(Label, Data) :-
     format("DEBUG: ~w ~w~n", [Label, Data]).
+
