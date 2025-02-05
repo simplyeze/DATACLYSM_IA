@@ -2,19 +2,19 @@
 
 % --- Carte nel deck (troop/4: Id, ATK, HP, EFFECT_ID) ---
 troop(001, 1, 1, 0).
-troop(002, 0, 1, 1).  % Questa carta ha un effetto speciale (EFFECT_ID = 1)
-troop(003, 0, 3, 0).
+troop(002, 1, 1, 1).  % Float (ID 1)
+troop(003, 1, 1, 2).  % Reach (ID 2)
 troop(004, 0, 6, 0).
 % Ad esempio, una carta extra per il nemico
-troop(005, 5, 5, 0).
+troop(005, 5, 5, 3). % Override (ID 3)
 
 % --- Stato del gioco ---
 % I campi (sia per l'IA che per il nemico) usano la struttura slot(NumeroSlot, IdCarta)
-game_state(hand_ia, [001, 002, 001, setting(101), method(201)]).
+game_state(hand_ia, [001, 002, 003, setting(101), method(201)]).
 game_state(field_ia, [slot(1, 001)]).
 
 % Anche il nemico ora usa ID numerici (ad es. 003)
-game_state(field_enemy, [slot(2, 001)]).
+game_state(field_enemy, [slot(1, 002)]).
 game_state(field_setting, setting(102)).
 game_state(method_played, false).
 
@@ -57,8 +57,6 @@ play_method(Hand, [(Method, "PlayMethod")]) :-
 play_method(_, []).
 
 % --- Difesa basata su colonne ---
-% Per ogni slot occupato dal nemico, determina la colonna difensiva;
-% se nella colonna il player NON ha già una carta, si prova a scegliere uno slot libero.
 find_defensive_slot(Field, EnemyField, DefensiveSlot) :-
     member(slot(EnemySlot, _), EnemyField),
     enemy_defense_column(EnemySlot, DefCol),
@@ -89,9 +87,6 @@ find_offensive_slot(Field, EnemyField, AttackSlot) :-
     ).
 
 % --- Predicati ausiliari per la difesa tramite colonne ---
-
-% Mappatura per la difesa: se il nemico è in uno di questi slot,
-% la corrispondente colonna difensiva del player è la seguente.
 enemy_defense_column(1, 4).
 enemy_defense_column(5, 4).
 enemy_defense_column(2, 3).
@@ -101,31 +96,26 @@ enemy_defense_column(7, 2).
 enemy_defense_column(4, 1).
 enemy_defense_column(8, 1).
 
-% Mappatura delle colonne per il player: ad esempio, la colonna 3 comprende gli slot 3 e 7.
 player_slots_in_column(1, [1,5]).
 player_slots_in_column(2, [2,6]).
 player_slots_in_column(3, [3,7]).
 player_slots_in_column(4, [4,8]).
 
-% Verifica se il player ha già una carta in una data colonna
 defended_by_column(Field, Col) :-
     player_slots_in_column(Col, Slots),
     member(Slot, Slots),
     occupied_slot(Field, Slot),
     !.
 
-% Seleziona uno slot libero in una data colonna per piazzare una troop, scegliendo in maniera pseudocasuale
 available_defensive_slot_in_column(Field, Col, Slot) :-
     player_slots_in_column(Col, Slots),
     findall(S, (member(S, Slots), \+ occupied_slot(Field, S)), AvailableSlots),
     AvailableSlots \= [],
     random_member(Slot, AvailableSlots).
 
-% --- Predicato ausiliario per verificare se uno slot è occupato nel Field ---
 occupied_slot(Field, Slot) :-
     member(slot(Slot, _), Field).
 
-% --- Predicato per verificare se il nemico occupa un dato slot ---
 enemy_slot(EnemyField, Slot) :-
     member(slot(Slot, _), EnemyField).
 
@@ -139,13 +129,10 @@ mirrored_slot(6, 3).
 mirrored_slot(1, 4).
 mirrored_slot(5, 4).
 
-% Predicato per determinare lo slot nemico attaccato, dato lo slot IA.
 mirrored_enemy_slot(IA_Slot, EnemySlot) :-
     mirrored_slot(EnemySlot, IA_Slot).
 
 % --- Seleziona la mossa migliore per le Troop ---
-% Nota: il termine che raccoglie i dati ora è esplicitamente una quadrupla,
-% ad esempio: tuple(Card, ATK, HP, Score)
 select_best_move(Hand, IA_Slot, EnemyField, [(Card, ATK, HP, IA_Slot)]) :-
     IA_Slot \= none,
     findall(tuple(Card, ATK, HP, Score),
@@ -154,13 +141,10 @@ select_best_move(Hand, IA_Slot, EnemyField, [(Card, ATK, HP, IA_Slot)]) :-
           evaluate(Card, ATK, HP, EffectID, Score, IA_Slot, EnemyField)
         ),
         ScoredMoves),
-    % Ordina in base al punteggio (Score) in ordine decrescente
     predsort(compare_tuples, ScoredMoves, SortedMoves),
     SortedMoves = [tuple(Card, ATK, HP, _) | _],
     debug_message("Giocata troop: ", (Card, ATK, HP, IA_Slot)).
 
-% --- Comparatore per predsort/3 ---
-% Se Score1 > Score2 allora il termine con Score1 deve comparire PRIMA, per questo restituiamo '<'
 compare_tuples(Order, tuple(_,_,_,Score1), tuple(_,_,_,Score2)) :-
     ( Score1 > Score2 -> Order = '<'
     ; Score1 < Score2 -> Order = '>'
@@ -168,30 +152,46 @@ compare_tuples(Order, tuple(_,_,_,Score1), tuple(_,_,_,Score2)) :-
     ).
 
 % --- Nuova funzione di valutazione ---
-% La valutazione considera il punteggio base (ATK + HP) e, se esiste una carta nemica nell'enemy slot attaccato,
-% aggiunge un bonus:
-%   - Bonus +3 se ATK IA >= HP nemico
-%   - Altrimenti, bonus +2 se HP IA > ATK nemico
-% Inoltre, se la carta ha un EFFECT_ID = 1, viene aggiunto un bonus ulteriore di +3.
-evaluate(Card, ATK, HP, EffectID, Score, IA_Slot, EnemyField) :-
+% Calcola il punteggio base come ATK + HP e aggiunge un bonus in funzione del tipo di effetto:
+%
+% Float (ID 1):
+%   - Se nello slot nemico è presente una carta con effetto Float (ID 1): bonus +2.
+%   - Se nello slot nemico è presente una carta (ma non Float): malus -2.
+%   - Se non c'è alcuna carta nemica: bonus +3.
+%
+% Reach (ID 2):
+%   - Se nello slot nemico è presente una carta con effetto Float (ID 1): bonus +4.
+%   - Altrimenti (compreso il caso in cui non c'è carta nemica): bonus +1.
+%
+% Nessun effetto:
+%   - Bonus +3 se ATK >= EnemyHP;
+%   - Bonus +2 se HP > EnemyATK;
+%   - Altrimenti bonus 0.
+evaluate(_Card, ATK, HP, EffectID, Score, IA_Slot, EnemyField) :-
     BaseScore is ATK + HP,
-    (   attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP)
-    ->  ( (ATK >= EnemyHP)
-         -> Bonus = 3
-         ;  (HP > EnemyATK
-             -> Bonus = 2
-             ;  Bonus = 0)
-         )
-    ;   Bonus = 0
+    ( EffectID =:= 1 ->  % Float
+         ( attacked_enemy_card(IA_Slot, EnemyField, _EnemyATK, _EnemyHP, EnemyEffect) ->
+               ( EnemyEffect =:= 1 -> EffectBonus = 2 ; EffectBonus = -2 )
+         ;   EffectBonus = 3 )
+    ; EffectID =:= 2 ->  % Reach
+         ( attacked_enemy_card(IA_Slot, EnemyField, _EnemyATK, _EnemyHP, EnemyEffect) ->
+               ( EnemyEffect =:= 1 -> EffectBonus = 4 ; EffectBonus = 1 )
+         ;   EffectBonus = 1 )
+    ;   % Nessun effetto: usa la logica originale
+         ( attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, _) ->
+             ( ATK >= EnemyHP -> DefaultBonus = 3
+             ; HP > EnemyATK -> DefaultBonus = 2
+             ; DefaultBonus = 0 )
+         ;   DefaultBonus = 0 ),
+         EffectBonus = DefaultBonus
     ),
-    ( EffectID =:= 1 -> EffectBonus = 3 ; EffectBonus = 0 ),
-    Score is BaseScore + Bonus + EffectBonus.
+    Score is BaseScore + EffectBonus.
 
-% Predicato che determina le statistiche della carta nemica che verrebbe attaccata
-attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP) :-
+% --- Aggiornamento di attacked_enemy_card per restituire anche l'EFFECT_ID della carta nemica ---
+attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffect) :-
     mirrored_enemy_slot(IA_Slot, EnemySlot),
     member(slot(EnemySlot, EnemyCard), EnemyField),
-    troop(EnemyCard, EnemyATK, EnemyHP, _).
+    troop(EnemyCard, EnemyATK, EnemyHP, EnemyEffect).
 
 % --- Esecuzione e stampa delle mosse ---
 esegui(Azioni) :-
