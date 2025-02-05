@@ -1,20 +1,20 @@
 :- use_module(library(random)).  % Per l'uso di random_member/2
 
-% --- Carte nel deck ---
-troop(001, 1, 1).
-troop(002, 4, 3).
-troop(003, 0, 3).
-troop(004, 0, 6).
+% --- Carte nel deck (troop/4: Id, ATK, HP, EFFECT_ID) ---
+troop(001, 1, 1, 0).
+troop(002, 0, 1, 1).  % Questa carta ha un effetto speciale (EFFECT_ID = 1)
+troop(003, 0, 3, 0).
+troop(004, 0, 6, 0).
 % Ad esempio, una carta extra per il nemico
-troop(005, 5, 5).
+troop(005, 5, 5, 0).
 
 % --- Stato del gioco ---
 % I campi (sia per l'IA che per il nemico) usano la struttura slot(NumeroSlot, IdCarta)
-game_state(hand_ia, [001, 002, 004, setting(101), method(201)]).
+game_state(hand_ia, [001, 002, 001, setting(101), method(201)]).
 game_state(field_ia, [slot(1, 001)]).
 
 % Anche il nemico ora usa ID numerici (ad es. 003)
-game_state(field_enemy, [slot(2, 005)]).
+game_state(field_enemy, [slot(2, 001)]).
 game_state(field_setting, setting(102)).
 game_state(method_played, false).
 
@@ -144,14 +144,14 @@ mirrored_enemy_slot(IA_Slot, EnemySlot) :-
     mirrored_slot(EnemySlot, IA_Slot).
 
 % --- Seleziona la mossa migliore per le Troop ---
-% Nota: il termine che raccoglie i dati ora è esplicitamente un 4-ple,
+% Nota: il termine che raccoglie i dati ora è esplicitamente una quadrupla,
 % ad esempio: tuple(Card, ATK, HP, Score)
 select_best_move(Hand, IA_Slot, EnemyField, [(Card, ATK, HP, IA_Slot)]) :-
     IA_Slot \= none,
     findall(tuple(Card, ATK, HP, Score),
         ( member(Card, Hand),
-          troop(Card, ATK, HP),
-          evaluate(Card, ATK, HP, Score, IA_Slot, EnemyField)
+          troop(Card, ATK, HP, EffectID),
+          evaluate(Card, ATK, HP, EffectID, Score, IA_Slot, EnemyField)
         ),
         ScoredMoves),
     % Ordina in base al punteggio (Score) in ordine decrescente
@@ -171,8 +171,9 @@ compare_tuples(Order, tuple(_,_,_,Score1), tuple(_,_,_,Score2)) :-
 % La valutazione considera il punteggio base (ATK + HP) e, se esiste una carta nemica nell'enemy slot attaccato,
 % aggiunge un bonus:
 %   - Bonus +3 se ATK IA >= HP nemico
-%   - Altrimenti, bonus +2 se HP IA >= ATK nemico
-evaluate(_Card, ATK, HP, Score, IA_Slot, EnemyField) :-
+%   - Altrimenti, bonus +2 se HP IA > ATK nemico
+% Inoltre, se la carta ha un EFFECT_ID = 1, viene aggiunto un bonus ulteriore di +3.
+evaluate(Card, ATK, HP, EffectID, Score, IA_Slot, EnemyField) :-
     BaseScore is ATK + HP,
     (   attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP)
     ->  ( (ATK >= EnemyHP)
@@ -183,13 +184,14 @@ evaluate(_Card, ATK, HP, Score, IA_Slot, EnemyField) :-
          )
     ;   Bonus = 0
     ),
-    Score is BaseScore + Bonus.
+    ( EffectID =:= 1 -> EffectBonus = 3 ; EffectBonus = 0 ),
+    Score is BaseScore + Bonus + EffectBonus.
 
 % Predicato che determina le statistiche della carta nemica che verrebbe attaccata
 attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP) :-
     mirrored_enemy_slot(IA_Slot, EnemySlot),
     member(slot(EnemySlot, EnemyCard), EnemyField),
-    troop(EnemyCard, EnemyATK, EnemyHP).
+    troop(EnemyCard, EnemyATK, EnemyHP, _).
 
 % --- Esecuzione e stampa delle mosse ---
 esegui(Azioni) :-
@@ -208,4 +210,3 @@ stampa_azione((Card, _, _, Slot)) :-
 % --- Funzione di debug ---
 debug_message(Label, Data) :-
     format("DEBUG: ~w ~w~n", [Label, Data]).
-
