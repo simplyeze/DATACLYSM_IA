@@ -1,23 +1,29 @@
+:- dynamic game_state/2.
 :- use_module(library(random)).  % Per l'uso di random_member/2
+
+% --- Predicato per aggiornare lo stato in maniera unica ---
+set_game_state(Key, Value) :-
+    retractall(game_state(Key, _)),
+    assert(game_state(Key, Value)).
 
 % --- Carte nel deck (troop/4: Id, ATK, HP, Effects) ---
 troop(001, 1, 1, [1]).           % Nessun effetto
-troop(002, 1, 1, [1]).        % Ad es. una carta con effetti Start (ID 4) e Collapse (ID 5)
-troop(003, 1, 1, [2]).          % Reach (ID 2)
-troop(004, 0, 20, [3]).           % Nessun effetto
-troop(005, 1, 1, [3]).          % Override (ID 3)
-% Nuova truppa con ID 8: ha sia Override (ID 3) che Reach (ID 2)
-troop(008, 3, 0, []).
+troop(002, 1, 1, [1]).           % Ad es. una carta con effetti Start (ID 4) e Collapse (ID 5)
+troop(003, 1, 1, [2]).           % Reach (ID 2)
+troop(004, 0, 6, []).            % Nessun effetto
+troop(005, 1, 1, [3]).           % Override (ID 3)
+troop(006, 1, 1, [3]).
+troop(007, 1, 1, [3]).
+troop(008, 3, 4, [3,2]).
+troop(009, 1, 1, [3]).
+troop(010, 1, 1, [3]).
 
-% --- Stato del gioco ---
-% I campi (sia per l'IA che per il nemico) usano la struttura slot(NumeroSlot, IdCarta)
-game_state(hand_ia, [008, 004, 005, setting(101), method(201)]).
-game_state(field_ia, [slot(1, 003)]).
-game_state(field_enemy, [slot(3, 003), slot(2, 003), slot(1, 003), slot(8, 003)]).
-game_state(field_setting, setting(102)).
-game_state(method_played, false).
-% Stato degli HP del nemico (esempio: 10 HP)
-game_state(enemy_hp, 10).
+% --- Stato iniziale del gioco ---
+set_game_state(hand_ia, []).             % Inizialmente la mano è vuota
+set_game_state(field_ia, []).             % Campo IA vuoto
+set_game_state(field_enemy, []).          % Campo nemico vuoto
+set_game_state(field_setting, setting(102)).
+set_game_state(method_played, false).
 
 % --- Predicato principale che decide l'azione migliore ---
 decide_action(BestMoves) :-
@@ -26,33 +32,27 @@ decide_action(BestMoves) :-
     play_method(Hand, MethodMove),
     game_state(field_ia, Field),
     game_state(field_enemy, EnemyField),
-    game_state(enemy_hp, EnemyHP),
-    % --- Nuovo ramo: se l'avversario ha una colonna vuota (speculare) ---
-    (   enemy_empty_column(EnemyField, AI_Col) ->
-            ( available_offensive_slot_in_column(Field, AI_Col, OffensiveSlot) ->
-                  finish_move(Hand, EnemyHP, OffensiveSlot, FinishingMove),
-                  TroopMove = FinishingMove,
-                  debug_message("Finishing move scelto in colonna AI ", AI_Col)
-            ;   TroopMove = []
-            )
-    ;   % Altrimenti, procede con la logica standard
-        (   find_defensive_slot(Field, EnemyField, ChosenSlot),
-            ChosenSlot \= none
-        ->  SelectedSlot = ChosenSlot,
-            debug_message("Slot difensivo scelto: ", SelectedSlot)
-        ;   find_offensive_slot(Field, EnemyField, ChosenSlot),
-            ChosenSlot \= none
-        ->  SelectedSlot = ChosenSlot,
-            debug_message("Slot offensivo scelto: ", SelectedSlot)
-        ;   SelectedSlot = none
-        ),
-        (   SelectedSlot \= none
-        ->  select_best_move(Hand, SelectedSlot, EnemyField, TroopMove)
-        ;   TroopMove = []
-        )
+    choose_slot(Field, EnemyField, SelectedSlot),
+    ( SelectedSlot \= none ->
+         debug_message("Slot scelto: ", SelectedSlot),
+         select_best_move(Hand, SelectedSlot, EnemyField, TroopMove)
+    ; TroopMove = []
     ),
     append([SettingMove, MethodMove, TroopMove], BestMoves),
     debug_message("Mosse scelte: ", BestMoves).
+
+% --- Predicato che sceglie lo slot da usare: preferenza alla difesa ---
+choose_slot(Field, EnemyField, SelectedSlot) :-
+    find_defensive_slot(Field, EnemyField, DefensiveSlot),
+    DefensiveSlot \= none,
+    !,
+    SelectedSlot = DefensiveSlot.
+choose_slot(Field, EnemyField, SelectedSlot) :-
+    find_offensive_slot(Field, EnemyField, OffensiveSlot),
+    OffensiveSlot \= none,
+    !,
+    SelectedSlot = OffensiveSlot.
+choose_slot(_, _, none).
 
 % --- Gestione delle carte Setting e Method ---
 play_setting(Hand, [(Setting, "PlaySetting")]) :-
@@ -66,18 +66,16 @@ play_method(Hand, [(Method, "PlayMethod")]) :-
     game_state(method_played, false), !.
 play_method(_, []).
 
-% --- Difesa basata su colonne ---
+% --- Difesa basata sul mirror della slot nemica ---
 find_defensive_slot(Field, EnemyField, DefensiveSlot) :-
     member(slot(EnemySlot, _), EnemyField),
-    enemy_defense_column(EnemySlot, DefCol),
-    \+ defended_by_column(Field, DefCol),
-    available_defensive_slot_in_column(Field, DefCol, DefensiveSlot),
-    !.
+    mirrored_slot(EnemySlot, Mirror),
+    \+ occupied_slot(Field, Mirror),
+    DefensiveSlot = Mirror, !.
 find_defensive_slot(_, _, none).
 
 % --- Difesa Offensiva (scelta pseudocasuale degli slot disponibili) ---
 find_offensive_slot(Field, EnemyField, AttackSlot) :-
-    % Considera prima gli slot in prima linea (1-4)
     findall(Candidate, (
         member(Candidate, [1,2,3,4]),
         \+ occupied_slot(Field, Candidate),
@@ -85,83 +83,24 @@ find_offensive_slot(Field, EnemyField, AttackSlot) :-
     ), OffensiveFrontSlots),
     (   OffensiveFrontSlots \= [] ->
             random_member(AttackSlot, OffensiveFrontSlots)
-    ;   % Altrimenti controlla la backrow (5-8)
-        findall(Candidate, (
+    ;   findall(Candidate, (
             member(Candidate, [5,6,7,8]),
             \+ occupied_slot(Field, Candidate)
-        ), OffensiveBackSlots),
+    ), OffensiveBackSlots),
         (   OffensiveBackSlots \= [] ->
                 random_member(AttackSlot, OffensiveBackSlots)
         ;   AttackSlot = none
         )
     ).
 
-% --- Nuovo predicato: dati un numero di colonna dell'IA (1..4), restituisce la colonna speculare del nemico ---
-enemy_mirrored_column(1, 4).
-enemy_mirrored_column(2, 3).
-enemy_mirrored_column(3, 2).
-enemy_mirrored_column(4, 1).
-
-% --- Nuovo predicato: controlla se l'avversario ha la colonna speculare vuota ---
-enemy_empty_column(EnemyField, AI_Col) :-
-    enemy_mirrored_column(AI_Col, EnemyCol),
-    player_slots_in_column(EnemyCol, EnemySlots),
-    \+ ( member(Slot, EnemySlots), enemy_slot(EnemyField, Slot) ).
-
-% --- Predicato ausiliario per trovare uno slot offensivo in una colonna specifica dell'IA ---
-available_offensive_slot_in_column(Field, AI_Col, OffensiveSlot) :-
-    player_slots_in_column(AI_Col, Slots),
-    member(OffensiveSlot, Slots),
-    \+ occupied_slot(Field, OffensiveSlot).
-
-% --- Predicato per selezionare la mossa finishing ---
-% Sceglie, tra le carte in mano, quella con ATK maggiore (o uguale) agli HP del nemico,
-% e la piazza nello slot offensivo specificato (nella stessa colonna dell'IA corrispondente alla colonna vuota del nemico)
-finish_move(Hand, EnemyHP, OffensiveSlot, [(Card, ATK, HP, OffensiveSlot)]) :-
-    findall((Card, ATK, HP),
-            ( member(Card, Hand),
-              troop(Card, ATK, HP, _),
-              ATK >= EnemyHP
-            ),
-            Moves),
-    Moves \= [],
-    sort(2, @>=, Moves, SortedMoves),
-    SortedMoves = [(Card, ATK, HP)|_].
-
-% --- Predicati ausiliari per la difesa tramite colonne ---
-enemy_defense_column(1, 4).
-enemy_defense_column(5, 4).
-enemy_defense_column(2, 3).
-enemy_defense_column(6, 3).
-enemy_defense_column(3, 2).
-enemy_defense_column(7, 2).
-enemy_defense_column(4, 1).
-enemy_defense_column(8, 1).
-
-player_slots_in_column(1, [1,5]).
-player_slots_in_column(2, [2,6]).
-player_slots_in_column(3, [3,7]).
-player_slots_in_column(4, [4,8]).
-
-defended_by_column(Field, Col) :-
-    player_slots_in_column(Col, Slots),
-    member(Slot, Slots),
-    occupied_slot(Field, Slot),
-    !.
-
-available_defensive_slot_in_column(Field, Col, Slot) :-
-    player_slots_in_column(Col, Slots),
-    findall(S, (member(S, Slots), \+ occupied_slot(Field, S)), AvailableSlots),
-    AvailableSlots \= [],
-    random_member(Slot, AvailableSlots).
-
+% --- Predicati ausiliari ---
 occupied_slot(Field, Slot) :-
     member(slot(Slot, _), Field).
 
 enemy_slot(EnemyField, Slot) :-
     member(slot(Slot, _), EnemyField).
 
-% --- Mappatura classica per i mirrored_slot ---
+% --- Mappatura per i mirrored_slot ---
 mirrored_slot(4, 1).
 mirrored_slot(8, 1).
 mirrored_slot(3, 2).
@@ -193,51 +132,8 @@ compare_tuples(Order, tuple(_,_,_,Score1), tuple(_,_,_,Score2)) :-
     ; Order = '='
     ).
 
-% --- Funzione di valutazione (versione "normale") ---
-%
-% NOTA: La logica è:
-% - Se nello slot speculare c'è una carta nemica, siamo in MODALITÀ defense;
-% - Altrimenti, siamo in MODALITÀ attack.
+% --- Funzione di valutazione ---
 evaluate(_Card, ATK, HP, Effects, Score, IA_Slot, EnemyField) :-
-    BaseScore is ATK + HP,
-    ( attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffects) ->
-          Mode = defense,   % Carta nemica presente → defense
-          HasEnemy = true
-    ;     Mode = attack,   % Nessuna carta nemica → attack
-          HasEnemy = false,
-          EnemyEffects = []
-    ),
-    ( Effects \= [] ->
-         ( HasEnemy = true ->
-              ( member(1, Effects) -> ( member(1, EnemyEffects) -> BonusFloat = 2 ; BonusFloat = -2 ) ; BonusFloat = 0 ),
-              ( member(2, Effects) -> ( member(1, EnemyEffects) -> BonusReach = 4 ; BonusReach = 1 ) ; BonusReach = 0 ),
-              ( member(3, Effects) -> BonusOverride = 4 ; BonusOverride = 0 ),
-              ( member(4, Effects) -> BonusStart = 2 ; BonusStart = 0 ),
-              ( member(5, Effects) -> ( Mode = defense -> BonusCollapse = 3 ; BonusCollapse = 1 ) ; BonusCollapse = 0 ),
-              ( member(6, Effects) -> ( Mode = attack   -> BonusOnHit = 3  ; BonusOnHit = 1 ) ; BonusOnHit = 0 ),
-              ( member(7, Effects) -> BonusOnGuard = 2 ; BonusOnGuard = 0 )
-         ;   % Mode attack
-              ( member(1, Effects) -> BonusFloat = 3 ; BonusFloat = 0 ),
-              ( member(2, Effects) -> BonusReach = 1 ; BonusReach = 0 ),
-              ( member(3, Effects) -> BonusOverride = 4 ; BonusOverride = 0 ),
-              ( member(4, Effects) -> BonusStart = 2 ; BonusStart = 0 ),
-              ( member(5, Effects) -> BonusCollapse = 3 ; BonusCollapse = 0 ),
-              ( member(6, Effects) -> BonusOnHit = 1 ; BonusOnHit = 0 ),
-              ( member(7, Effects) -> BonusOnGuard = 2 ; BonusOnGuard = 0 )
-         ),
-         TotalBonus is BonusFloat + BonusReach + BonusOverride +
-                        BonusStart + BonusCollapse + BonusOnHit + BonusOnGuard
-    ;   % Nessun effetto: logica di default
-         ( HasEnemy = true ->
-               ( ATK >= EnemyHP -> TotalBonus = 3
-               ; HP > EnemyATK -> TotalBonus = 2
-               ; TotalBonus = 0 )
-         ;  TotalBonus = 0 )
-    ),
-    Score is BaseScore + TotalBonus.
-
-% --- Funzione di valutazione con debug dettagliato ---
-evaluate_debug(_Card, ATK, HP, Effects, Score, IA_Slot, EnemyField) :-
     BaseScore is ATK + HP,
     ( attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffects) ->
           Mode = defense,
@@ -255,8 +151,7 @@ evaluate_debug(_Card, ATK, HP, Effects, Score, IA_Slot, EnemyField) :-
               ( member(5, Effects) -> ( Mode = defense -> BonusCollapse = 3 ; BonusCollapse = 1 ) ; BonusCollapse = 0 ),
               ( member(6, Effects) -> ( Mode = attack   -> BonusOnHit = 3  ; BonusOnHit = 1 ) ; BonusOnHit = 0 ),
               ( member(7, Effects) -> BonusOnGuard = 2 ; BonusOnGuard = 0 )
-         ;
-              ( member(1, Effects) -> BonusFloat = 3 ; BonusFloat = 0 ),
+         ;   ( member(1, Effects) -> BonusFloat = 3 ; BonusFloat = 0 ),
               ( member(2, Effects) -> BonusReach = 1 ; BonusReach = 0 ),
               ( member(3, Effects) -> BonusOverride = 4 ; BonusOverride = 0 ),
               ( member(4, Effects) -> BonusStart = 2 ; BonusStart = 0 ),
@@ -266,55 +161,14 @@ evaluate_debug(_Card, ATK, HP, Effects, Score, IA_Slot, EnemyField) :-
          ),
          TotalBonus is BonusFloat + BonusReach + BonusOverride +
                         BonusStart + BonusCollapse + BonusOnHit + BonusOnGuard
-    ;
-         ( HasEnemy = true ->
+    ;   ( HasEnemy = true ->
                ( ATK >= EnemyHP -> TotalBonus = 3
                ; HP > EnemyATK -> TotalBonus = 2
                ; TotalBonus = 0 )
          ;  TotalBonus = 0 )
     ),
-    Score is BaseScore + TotalBonus,
-    format("DEBUG: Valutazione per carta ~w~n", [_Card]),
-    format("      ATK: ~w, HP: ~w, BaseScore: ~w~n", [ATK, HP, BaseScore]),
-    format("      Effetti: ~w~n", [Effects]),
-    format("      Modalità: ~w~n", [Mode]),
-    ( HasEnemy = true ->
-         format("      Nemico: ATK: ~w, HP: ~w, Effetti: ~w~n", [EnemyATK, EnemyHP, EnemyEffects])
-    ;  format("      Nessun nemico nello slot attaccato~n", [])
-    ),
-    ( Effects \= [] ->
-         ( format("      BonusFloat: ~w~n", [BonusFloat]),
-           format("      BonusReach: ~w~n", [BonusReach]),
-           format("      BonusOverride: ~w~n", [BonusOverride]),
-           format("      BonusStart: ~w~n", [BonusStart]),
-           format("      BonusCollapse: ~w~n", [BonusCollapse]),
-           format("      BonusOnHit: ~w~n", [BonusOnHit]),
-           format("      BonusOnGuard: ~w~n", [BonusOnGuard]),
-           format("      TotalBonus: ~w~n", [TotalBonus])
-         )
-    ;  format("      Bonus default: ~w~n", [TotalBonus])
-    ),
-    format("      Punteggio totale: ~w~n~n", [Score]).
+    Score is BaseScore + TotalBonus.
 
-% --- Funzione per valutare e stampare i dettagli per ogni carta in mano ---
-debug_hand_evaluation(Hand, IA_Slot, EnemyField) :-
-    forall((member(Card, Hand), number(Card)),
-           ( troop(Card, ATK, HP, Effects),
-             evaluate_debug(Card, ATK, HP, Effects, Score, IA_Slot, EnemyField)
-           )).
-
-% --- Predicato per stampare a schermo i dettagli del calcolo dei punteggi per tutte le carte in mano ---
-debug_all_card_scores :-
-    game_state(hand_ia, Hand),
-    game_state(field_enemy, EnemyField),
-    game_state(field_ia, Field),
-    ( Field = [slot(IA_Slot, _)|_] ->
-         true
-    ;  IA_Slot = none
-    ),
-    debug_hand_evaluation(Hand, IA_Slot, EnemyField).
-
-% --- Aggiornamento di attacked_enemy_card per restituire anche la lista degli effetti ---
 attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffects) :-
     mirrored_enemy_slot(IA_Slot, EnemySlot),
     member(slot(EnemySlot, EnemyCard), EnemyField),
@@ -334,8 +188,5 @@ stampa_azione((Card, "PlayMethod")) :-
 stampa_azione((Card, _, _, Slot)) :-
     format('Gioca(~w, ~w)~n', [Card, Slot]).
 
-% --- Funzione di debug generica ---
 debug_message(Label, Data) :-
     format("DEBUG: ~w ~w~n", [Label, Data]).
-
-
