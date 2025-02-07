@@ -32,11 +32,17 @@ decide_action(BestMoves) :-
     play_method(Hand, MethodMove),
     game_state(field_ia, Field),
     game_state(field_enemy, EnemyField),
-    choose_slot(Field, EnemyField, SelectedSlot),
-    ( SelectedSlot \= none ->
-         debug_message("Slot scelto: ", SelectedSlot),
-         select_best_move(Hand, SelectedSlot, EnemyField, TroopMove)
-    ; TroopMove = []
+    (   % Se nella mano esiste almeno una carta troop (numero)
+        member(Card, Hand),
+        number(Card)
+    ->  choose_slot(Field, EnemyField, SelectedSlot),
+        ( SelectedSlot \= none ->
+             debug_message("Slot scelto: ", SelectedSlot),
+             select_best_move(Hand, SelectedSlot, EnemyField, TroopMove)
+        ;   TroopMove = []
+        )
+    ;   % Altrimenti, se non ci sono carte troop, non giocare alcuna mossa troop
+        TroopMove = []
     ),
     append([SettingMove, MethodMove, TroopMove], BestMoves),
     debug_message("Mosse scelte: ", BestMoves).
@@ -113,23 +119,22 @@ mirrored_slot(5, 4).
 mirrored_enemy_slot(IA_Slot, EnemySlot) :-
     mirrored_slot(EnemySlot, IA_Slot).
 
-% --- Seleziona la mossa migliore per le Troop ---
-select_best_move(Hand, IA_Slot, EnemyField, [(Card, ATK, HP, IA_Slot)]) :-
-    IA_Slot \= none,
+select_best_move(Hand, IA_Slot, EnemyField, TroopMove) :-
+    % Cerca solo carte troop (ovvero numeri, non strutture method/1)
     findall(tuple(Card, ATK, HP, Score),
         ( member(Card, Hand),
+          number(Card),  % Assicura che Card sia un numero, quindi una troop
           troop(Card, ATK, HP, Effects),
           evaluate(Card, ATK, HP, Effects, Score, IA_Slot, EnemyField)
         ),
         ScoredMoves),
-    predsort(compare_tuples, ScoredMoves, SortedMoves),
-    SortedMoves = [tuple(Card, ATK, HP, _) | _],
-    debug_message("Giocata troop: ", (Card, ATK, HP, IA_Slot)).
-
-compare_tuples(Order, tuple(_,_,_,Score1), tuple(_,_,_,Score2)) :-
-    ( Score1 > Score2 -> Order = '<'
-    ; Score1 < Score2 -> Order = '>'
-    ; Order = '='
+    ( ScoredMoves = [] ->
+         TroopMove = []  % Non c'è nessuna carta troop, quindi non eseguire mosse troop
+    ; 
+         predsort(compare_tuples, ScoredMoves, SortedMoves),
+         SortedMoves = [tuple(Card, ATK, HP, _) | _],
+         TroopMove = [(Card, ATK, HP, IA_Slot)],
+         debug_message("Giocata troop: ", (Card, ATK, HP, IA_Slot))
     ).
 
 % --- Funzione di valutazione ---
