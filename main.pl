@@ -1,5 +1,5 @@
 :- dynamic game_state/2.
-:- use_module(library(random)).  % Per l'uso di random_member/2
+:- use_module(library(random)).  % Per l'uso di random_member
 :- discontiguous set_game_state/2.
 
 % --- Predicato per aggiornare lo stato in maniera unica ---
@@ -8,13 +8,11 @@ set_game_state(Key, Value) :-
     assert(game_state(Key, Value)).
 
 % --- Carte nel deck ---
-% Modifica: il predicato troop/4 diventa troop/6, aggiungendo Subtype e UpdateID.
-% Esempio: per ogni carta ho assegnato un Subtype progressivo e UpdateID 0.
-troop(001, 1, 1, [], 1, 0).           % Nessun effetto
-troop(002, 2, 1, [2], 2, 0).           % Ad es. una carta con effetti Start (ID 4) e Collapse (ID 5)
-troop(003, 0, 3, [], 3, 0).           % Reach (ID 2)
-troop(004, 2, 1, [1], 4, 0).            % Nessun effetto
-troop(005, 3, 3, [], 1, 1).           % Override (ID 3)
+troop(001, 1, 1, [], 1, 0).
+troop(002, 2, 1, [2], 2, 0).
+troop(003, 0, 3, [], 3, 0).
+troop(004, 2, 1, [1], 4, 0).
+troop(005, 3, 3, [], 1, 1).
 troop(006, 4, 1, [2], 2, 2).
 troop(007, 2, 5, [], 3, 3).
 troop(008, 4, 5, [1], 4, 4).
@@ -22,9 +20,9 @@ troop(009, 2, 1, [], 0, 0).
 troop(010, 1, 1, [], 5, 0).
 
 % --- Stato iniziale del gioco ---
-set_game_state(hand_ia, []).             % Mano inizialmente vuota
-set_game_state(field_ia, []).             % Campo IA vuoto
-set_game_state(field_enemy, []).          % Campo nemico vuoto
+set_game_state(hand_ia, []).
+set_game_state(field_ia, []).
+set_game_state(field_enemy, []).
 set_game_state(field_setting, setting(102)).
 set_game_state(method_played, false).
 
@@ -38,30 +36,30 @@ decide_action(BestMoves) :-
     (   % Se in mano esiste almeno una carta troop (numero)
         member(Card, Hand),
         number(Card)
-    ->  choose_slot(Field, EnemyField, SelectedSlot),
-        ( SelectedSlot \= none ->
+    ->  choose_slot(Field, EnemyField, SelectedSlot), % Sceglie slot
+        ( SelectedSlot \= none -> % Sceglie migliore carta
              debug_message("Slot scelto: ", SelectedSlot),
-             select_best_move(Hand, SelectedSlot, EnemyField, TroopMove)
-        ;   TroopMove = []
+             select_best_move(Hand, SelectedSlot, EnemyField, TroopMove) % Dalla mano, tiene conto del campo avversario
+        ;   TroopMove = [] % Per memorizzare il risultato
         )
     ;   % Altrimenti, non eseguire mosse troop
         TroopMove = []
     ),
-    append([SettingMove, MethodMove, TroopMove], BestMoves),
+    append([SettingMove, MethodMove, TroopMove], BestMoves), % Combinate le mosse nella lista BestMoves
     debug_message("Mosse scelte: ", BestMoves).
 
 % --- Predicato che sceglie lo slot da usare: preferenza alla difesa ---
 choose_slot(Field, EnemyField, SelectedSlot) :-
     find_defensive_slot(Field, EnemyField, DefensiveSlot),
     DefensiveSlot \= none,
-    !,
+    !, % Cut impedisce altre azioni se è stato trovato DefensiveSlot
     SelectedSlot = DefensiveSlot.
 choose_slot(Field, EnemyField, SelectedSlot) :-
     find_offensive_slot(Field, EnemyField, OffensiveSlot),
     OffensiveSlot \= none,
     !,
     SelectedSlot = OffensiveSlot.
-choose_slot(_, _, none).
+choose_slot(_, _, none). % Se non è stato trovato slot, diventa none
 
 % --- Gestione delle carte Setting e Method ---
 play_setting(Hand, [(Setting, "PlaySetting")]) :-
@@ -77,36 +75,36 @@ play_method(_, []).
 
 % --- Difesa basata sul mirror della slot nemica ---
 find_defensive_slot(Field, EnemyField, DefensiveSlot) :-
-    member(slot(EnemySlot, _), EnemyField),
+    member(slot(EnemySlot, _), EnemyField), % Ricerca carte avversario
     mirrored_slot(EnemySlot, Mirror),
-    \+ occupied_slot(Field, Mirror),
+    \+ occupied_slot(Field, Mirror), % Uso not se lo slot non è occupato
     DefensiveSlot = Mirror, !.
 find_defensive_slot(_, _, none).
 
 % --- Difesa Offensiva (scelta pseudocasuale degli slot disponibili) ---
 find_offensive_slot(Field, EnemyField, AttackSlot) :-
-    findall(Candidate, (
+    findall(Candidate, ( % Raccoglie posizioni libere prima fila
         member(Candidate, [1,2,3,4]),
-        \+ occupied_slot(Field, Candidate),
-        \+ enemy_slot(EnemyField, Candidate)
-    ), OffensiveFrontSlots),
+        \+ occupied_slot(Field, Candidate), % Verifica che non è occupato
+        \+ enemy_slot(EnemyField, Candidate) % Non uccapata da nemici
+    ), OffensiveFrontSlots), % Memorizzato se valido
     (   OffensiveFrontSlots \= [] ->
-            random_member(AttackSlot, OffensiveFrontSlots)
-    ;   findall(Candidate, (
+            random_member(AttackSlot, OffensiveFrontSlots) % Scelta casuale
+    ;   findall(Candidate, ( %ricerca slot in seconda fila
             member(Candidate, [5,6,7,8]),
             \+ occupied_slot(Field, Candidate)
     ), OffensiveBackSlots),
         (   OffensiveBackSlots \= [] ->
                 random_member(AttackSlot, OffensiveBackSlots)
-        ;   AttackSlot = none
+        ;   AttackSlot = none % Scelto none se non ci sono posizioni disponibili
         )
     ).
 
 % --- Predicati ausiliari ---
-occupied_slot(Field, Slot) :-
+occupied_slot(Field, Slot) :- % Verifica se slot AI occupato
     member(slot(Slot, _), Field).
 
-enemy_slot(EnemyField, Slot) :-
+enemy_slot(EnemyField, Slot) :- % Verifica se slot nemico occupato
     member(slot(Slot, _), EnemyField).
 
 % --- Mappatura per i mirrored_slot ---
@@ -130,14 +128,14 @@ select_best_move(Hand, IA_Slot, EnemyField, TroopMove) :-
           number(Card),
           troop(Card, ATK, HP, Effects, Subtype, UpdateID),
           UpdateID =:= 0,  % Esclude le carte update
-          evaluate(Card, ATK, HP, Effects, Subtype, UpdateID, Score, IA_Slot, EnemyField)
+          evaluate(Card, ATK, HP, Effects, Subtype, UpdateID, Score, IA_Slot, EnemyField) % Calcola valutazione carte
         ),
         ScoredMoves),
-    ( ScoredMoves = [] ->
-         TroopMove = []  % Nessuna mossa troop giocabile
+    ( ScoredMoves = [] -> % Se non ci sono troop valide, lista vuota
+         TroopMove = []
     ;
-         predsort(compare_tuples, ScoredMoves, SortedMoves),
-         SortedMoves = [tuple(Card, ATK, HP, _) | _],
+         predsort(compare_tuples, ScoredMoves, SortedMoves), % Ordina lista
+         SortedMoves = [tuple(Card, ATK, HP, _) | _], % Selezionata la prima carta
          TroopMove = [(Card, ATK, HP, IA_Slot)],
          debug_message("Giocata troop: ", (Card, ATK, HP, IA_Slot))
     ).
@@ -148,15 +146,15 @@ compare_tuples(Order, tuple(_, _, _, Score1), tuple(_, _, _, Score2)) :-
 
 % --- Funzione di valutazione ---
 evaluate(_Card, ATK, HP, Effects, _Subtype, _UpdateID, Score, IA_Slot, EnemyField) :-
-    BaseScore is ATK + HP,
-    ( attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffects) ->
+    BaseScore is ATK + HP, % Calcolo punteggio base
+    ( attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffects) -> % Verifica se la carta è in modalità offensiva o difensiva
           Mode = defense,
           HasEnemy = true
     ;     Mode = attack,
           HasEnemy = false,
           EnemyEffects = []
     ),
-    ( Effects \= [] ->
+    ( Effects \= [] -> % Calcoli i vari bonus se la carta ha effetti
          ( HasEnemy = true ->
               ( member(1, Effects) -> ( member(1, EnemyEffects) -> BonusFloat = 2 ; BonusFloat = -2 ) ; BonusFloat = 0 ),
               ( member(2, Effects) -> ( member(1, EnemyEffects) -> BonusReach = 4 ; BonusReach = 1 ) ; BonusReach = 0 ),
@@ -175,7 +173,7 @@ evaluate(_Card, ATK, HP, Effects, _Subtype, _UpdateID, Score, IA_Slot, EnemyFiel
          ),
          TotalBonus is BonusFloat + BonusReach + BonusOverride +
                         BonusStart + BonusCollapse + BonusOnHit + BonusOnGuard
-    ;   ( HasEnemy = true ->
+    ;   ( HasEnemy = true -> % Calcolo punteggio in base a nemico
                ( ATK >= EnemyHP -> TotalBonus = 3
                ; HP > EnemyATK -> TotalBonus = 2
                ; TotalBonus = 0 )
@@ -183,15 +181,15 @@ evaluate(_Card, ATK, HP, Effects, _Subtype, _UpdateID, Score, IA_Slot, EnemyFiel
     ),
     Score is BaseScore + TotalBonus.
 
-attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffects) :-
+attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffects) :- % Controlla se la carta AI ha davanti una dell'avversario
     mirrored_enemy_slot(IA_Slot, EnemySlot),
-    member(slot(EnemySlot, EnemyCard), EnemyField),
+    member(slot(EnemySlot, EnemyCard), EnemyField), % Recupera statistiche carta avversario
     troop(EnemyCard, EnemyATK, EnemyHP, EnemyEffects, _, _).
 
 % --- Esecuzione e stampa delle mosse ---
 esegui(Azioni) :-
     decide_action(Azioni),
-    forall(member(Azione, Azioni), stampa_azione(Azione)).
+    forall(member(Azione, Azioni), stampa_azione(Azione)). % Utilizzando forall per iterare su tutti gli elementi della lista Azioni
 
 stampa_azione(("No Move", 0, 0, 0)) :-
     format('Gioca(No Move, 0, 0, 0)~n').
@@ -211,15 +209,7 @@ remove_card_from_hand(Card) :-
     select(Card, Hand, NewHand),
     set_game_state(hand_ia, NewHand).
 
-% --- Nuovo predicato per gestire le carte Update ---
-%
-% Questo predicato:
-%  - Verifica se in mano ci sono carte update (UpdateID != 0)
-%  - Cerca, tra le truppe sul campo IA, quelle non ancora aggiornate (FieldUpdateID = 0)
-%    il cui sottotipo (FieldSubtype) corrisponde all'UpdateID della carta update.
-%  - Se esistono più corrispondenze, ne sceglie una a caso.
-%  - Se non si trova nessuna corrispondenza, stampa "Nessun Update giocabile".
-%  - La carta update non viene rimossa dalla mano.
+% --- Predicato per gestire le carte Update ---
 esegui_update :-
     game_state(hand_ia, Hand),
     game_state(field_ia, Field),
@@ -227,20 +217,18 @@ esegui_update :-
         ( member(UpdateCard, Hand),
           number(UpdateCard),
           troop(UpdateCard, _, _, _, _, UUpdateID),
-          UUpdateID =\= 0,  % carta update
+          UUpdateID =\= 0,  % Verifica se in mano ci sono carte update
           member(slot(Slot, FieldCard), Field),
           troop(FieldCard, _, _, _, FieldSubtype, FieldUpdateID),
-          FieldUpdateID =:= 0,  % truppa non aggiornata
+          FieldUpdateID =:= 0,  % Controlla se nel campo ci sono truppe non aggiornate
           UUpdateID =:= FieldSubtype  % corrispondenza tra UpdateID della carta e Subtype della truppa
         ),
         UpdatePairs),
-    ( UpdatePairs = [] ->
+    ( UpdatePairs = [] -> % Se non ci sono accoppiamenti per Updeate
          format('Nessun Update giocabile~n')
     ;
-         random_member((ChosenUpdate, ChosenSlot), UpdatePairs),
-         % Costruiamo un move tuple nello stesso formato (Card, ATK, HP, Slot)
-         % Per le carte update, ATK e HP possono essere posti a 0.
-         Move = (ChosenUpdate, 0, 0, ChosenSlot),
+         random_member((ChosenUpdate, ChosenSlot), UpdatePairs), % Se ci sono più accoppiamenti, sceglie casualmente
+         Move = (ChosenUpdate, 0, 0, ChosenSlot),% Move tuple nello stesso formato
          stampa_azione(Move)
     ),
     true.
