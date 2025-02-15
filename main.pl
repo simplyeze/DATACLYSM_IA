@@ -188,6 +188,8 @@ stampa_azione((Card, "PlayMethod")) :-
     format('Gioca il nuovo Method: ~w~n', [Card]).
 stampa_azione((Card, _, _, Slot)) :-
     format('Gioca(~w, ~w)~n', [Card, Slot]).
+stampa_azione((Card, "Scarta")) :-
+    format('Scarta la carta: ~w~n', [Card]).
 
 debug_message(Label, Data) :-
     format("DEBUG: ~w ~w~n", [Label, Data]).
