@@ -64,36 +64,36 @@ play_method(_, []).
 
 % --- Difesa basata sul mirror della slot nemica ---
 find_defensive_slot(Field, EnemyField, DefensiveSlot) :-
-    member(slot(EnemySlot, _, _), EnemyField), % Ricerca carte avversario
+    member(slot(EnemySlot, _, 0), EnemyField), % Ricerca carta avversaria
     mirrored_slot(EnemySlot, Mirror),
-    \+ occupied_slot(Field, Mirror), % Uso not se lo slot non è occupato
+    \+ occupied_slot(Field, Mirror), % Verifica che lo slot mirror non sia occupato
     DefensiveSlot = Mirror, !.
 find_defensive_slot(_, _, none).
 
 % --- Difesa Offensiva (scelta pseudocasuale degli slot disponibili) ---
 find_offensive_slot(Field, EnemyField, AttackSlot) :-
-    findall(Candidate, ( % Raccoglie posizioni libere prima fila
+    findall(Candidate, ( % Raccoglie posizioni libere in prima fila
         member(Candidate, [1,2,3,4]),
-        \+ occupied_slot(Field, Candidate), % Verifica che non è occupato
-        \+ enemy_slot(EnemyField, Candidate) % Non uccapata da nemici
-    ), OffensiveFrontSlots), % Memorizzato se valido
+        \+ occupied_slot(Field, Candidate), % Verifica che non sia occupato
+        \+ enemy_slot(EnemyField, Candidate) % Non occupato da nemici
+    ), OffensiveFrontSlots),
     (   OffensiveFrontSlots \= [] ->
             random_member(AttackSlot, OffensiveFrontSlots) % Scelta casuale
-    ;   findall(Candidate, ( %ricerca slot in seconda fila
+    ;   findall(Candidate, ( % Ricerca slot in seconda fila
             member(Candidate, [5,6,7,8]),
             \+ occupied_slot(Field, Candidate)
     ), OffensiveBackSlots),
         (   OffensiveBackSlots \= [] ->
                 random_member(AttackSlot, OffensiveBackSlots)
-        ;   AttackSlot = none % Scelto none se non ci sono posizioni disponibili
+        ;   AttackSlot = none % Se non ci sono posizioni disponibili
         )
     ).
 
 % --- Predicati ausiliari ---
-occupied_slot(Field, Slot) :- % Verifica se slot AI occupato
+occupied_slot(Field, Slot) :-
     member(slot(Slot, _, _), Field).
 
-enemy_slot(EnemyField, Slot) :- % Verifica se slot nemico occupato
+enemy_slot(EnemyField, Slot) :- % Verifica se lo slot nemico è occupato
     member(slot(Slot, _, _), EnemyField).
 
 % --- Mappatura per i mirrored_slot ---
@@ -117,14 +117,14 @@ select_best_move(Hand, IA_Slot, EnemyField, TroopMove) :-
           number(Card),
           troop(Card, ATK, HP, Effects, Subtype, UpdateID),
           UpdateID =:= 0,  % Esclude le carte update
-          evaluate(Card, ATK, HP, Effects, Subtype, UpdateID, Score, IA_Slot, EnemyField) % Calcola valutazione carte
+          evaluate(Card, ATK, HP, Effects, Subtype, UpdateID, Score, IA_Slot, EnemyField) % Calcola valutazione carta
         ),
         ScoredMoves),
     ( ScoredMoves = [] -> % Se non ci sono troop valide, lista vuota
          TroopMove = []
     ;
          predsort(compare_tuples, ScoredMoves, SortedMoves), % Ordina lista
-         SortedMoves = [tuple(Card, ATK, HP, _) | _], % Selezionata la prima carta
+         SortedMoves = [tuple(Card, ATK, HP, _) | _], % Seleziona la prima carta
          TroopMove = [(Card, ATK, HP, IA_Slot)],
          debug_message("Giocata troop: ", (Card, ATK, HP, IA_Slot))
     ).
@@ -143,7 +143,7 @@ evaluate(_Card, ATK, HP, Effects, _Subtype, _UpdateID, Score, IA_Slot, EnemyFiel
           HasEnemy = false,
           EnemyEffects = []
     ),
-    ( Effects \= [] -> % Calcoli i vari bonus se la carta ha effetti
+    ( Effects \= [] -> % Calcola i bonus se la carta ha effetti
          ( HasEnemy = true ->
               ( member(1, Effects) -> ( member(1, EnemyEffects) -> BonusFloat = 2 ; BonusFloat = -2 ) ; BonusFloat = 0 ),
               ( member(2, Effects) -> ( member(1, EnemyEffects) -> BonusReach = 4 ; BonusReach = 1 ) ; BonusReach = 0 ),
@@ -162,7 +162,7 @@ evaluate(_Card, ATK, HP, Effects, _Subtype, _UpdateID, Score, IA_Slot, EnemyFiel
          ),
          TotalBonus is BonusFloat + BonusReach + BonusOverride +
                         BonusStart + BonusCollapse + BonusOnHit + BonusOnGuard
-    ;   ( HasEnemy = true -> % Calcolo punteggio in base a nemico
+    ;   ( HasEnemy = true -> % Calcola punteggio in base al nemico
                ( ATK >= EnemyHP -> TotalBonus = 3
                ; HP > EnemyATK -> TotalBonus = 2
                ; TotalBonus = 0 )
@@ -170,15 +170,15 @@ evaluate(_Card, ATK, HP, Effects, _Subtype, _UpdateID, Score, IA_Slot, EnemyFiel
     ),
     Score is BaseScore + TotalBonus.
 
-attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffects) :- % Controlla se la carta AI ha davanti una dell'avversario
+attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffects) :- % Controlla se la carta AI ha davanti una carta dell'avversario
     mirrored_enemy_slot(IA_Slot, EnemySlot),
-    member(slot(EnemySlot, EnemyCard, _), EnemyField), % Recupera statistiche carta avversario
+    member(slot(EnemySlot, EnemyCard, 0), EnemyField), % Recupera le statistiche della carta avversaria
     troop(EnemyCard, EnemyATK, EnemyHP, EnemyEffects, _, _).
 
 % --- Esecuzione e stampa delle mosse ---
 esegui(Azioni) :-
     decide_action(Azioni),
-    forall(member(Azione, Azioni), stampa_azione(Azione)). % Utilizzando forall per iterare su tutti gli elementi della lista Azioni
+    forall(member(Azione, Azioni), stampa_azione(Azione)). % Itera su tutti gli elementi della lista Azioni
 
 stampa_azione(("No Move", 0, 0, 0)) :-
     format('Gioca(No Move, 0, 0, 0)~n').
@@ -203,18 +203,19 @@ esegui_update :-
           number(UpdateCard),
           troop(UpdateCard, _, _, _, _, UUpdateID),
           UUpdateID =\= 0,  % Verifica se in mano ci sono carte update
-          member(slot(Slot, FieldCard, Played), Field),
+          % Seleziona solo slot legali (con flag = 0)
+          member(slot(Slot, FieldCard, Flag), Field),
+          Flag =:= 0,
           troop(FieldCard, _, _, _, FieldSubtype, FieldUpdateID),
           FieldUpdateID =:= 0,  % Controlla se nel campo ci sono truppe non aggiornate
-          UUpdateID =:= FieldSubtype, % corrispondenza tra UpdateID della carta e Subtype della truppa
-          Played =\= 0
+          UUpdateID =:= FieldSubtype  % Corrispondenza tra UpdateID della carta e Subtype della truppa
         ),
         UpdatePairs),
-    ( UpdatePairs = [] -> % Se non ci sono accoppiamenti per Updeate
+    ( UpdatePairs = [] ->  % Se non ci sono accoppiamenti per Update
          format('Nessun Update giocabile~n')
     ;
-         random_member((ChosenUpdate, ChosenSlot), UpdatePairs), % Se ci sono più accoppiamenti, sceglie casualmente
-         Move = (ChosenUpdate, 0, 0, ChosenSlot),% Move tuple nello stesso formato
+         random_member((ChosenUpdate, ChosenSlot), UpdatePairs),  % Se ce ne sono, sceglie casualmente
+         Move = (ChosenUpdate, 0, 0, ChosenSlot),  % La mossa ha lo stesso formato delle altre
          stampa_azione(Move)
     ),
     true.
