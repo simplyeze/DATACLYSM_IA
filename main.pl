@@ -1,23 +1,12 @@
 :- dynamic game_state/2.
 :- use_module(library(random)).  % Per l'uso di random_member
 :- discontiguous set_game_state/2.
+:- ensure_loaded('cardlist').
 
 % --- Predicato per aggiornare lo stato in maniera unica ---
 set_game_state(Key, Value) :-
     retractall(game_state(Key, _)),
     assert(game_state(Key, Value)).
-
-% --- Carte nel deck ---
-troop(001, 1, 1, [], 1, 0).
-troop(002, 2, 1, [2], 2, 0).
-troop(003, 0, 3, [], 3, 0).
-troop(004, 2, 1, [1], 4, 0).
-troop(005, 3, 3, [], 1, 1).
-troop(006, 4, 1, [2], 2, 2).
-troop(007, 2, 5, [], 3, 3).
-troop(008, 4, 5, [1], 4, 4).
-troop(009, 2, 1, [], 0, 0).
-troop(010, 1, 1, [], 5, 0).
 
 % --- Stato iniziale del gioco ---
 set_game_state(hand_ia, []).
@@ -199,15 +188,11 @@ stampa_azione((Card, "PlayMethod")) :-
     format('Gioca il nuovo Method: ~w~n', [Card]).
 stampa_azione((Card, _, _, Slot)) :-
     format('Gioca(~w, ~w)~n', [Card, Slot]).
+stampa_azione((Card, "Scarta")) :-
+    format('Scarta la carta: ~w~n', [Card]).
 
 debug_message(Label, Data) :-
     format("DEBUG: ~w ~w~n", [Label, Data]).
-
-% --- Predicato ausiliario per rimanere la carta dalla mano (non più usato in esegui_update) ---
-remove_card_from_hand(Card) :-
-    game_state(hand_ia, Hand),
-    select(Card, Hand, NewHand),
-    set_game_state(hand_ia, NewHand).
 
 % --- Predicato per gestire le carte Update ---
 esegui_update :-
@@ -232,3 +217,21 @@ esegui_update :-
          stampa_azione(Move)
     ),
     true.
+
+% --- Predicato per scartare carte in eccesso a fine turno ---
+scarta_fine_turno :-
+    game_state(hand_ia, Hand),
+    length(Hand, NumCards),
+    (   NumCards > 7 ->
+        Diff is NumCards - 7,
+        % Mischia la mano e separa le carte da scartare (Diff) da quelle da tenere
+        random_permutation(Hand, ShuffledHand),
+        length(Discarded, Diff),
+        append(Discarded, NewHand, ShuffledHand),
+        set_game_state(hand_ia, NewHand),
+        % Per ogni carta da scartare, stampa il messaggio richiesto
+        forall(member(Card, Discarded),
+               format('Scarta la carta: ~w~n', [Card]))
+    ;   % Se non ci sono carte da scartare, stampa "Nessuno scarto!"
+        format('Nessuno scarto!~n')
+    ).
