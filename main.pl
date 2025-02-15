@@ -64,7 +64,7 @@ play_method(_, []).
 
 % --- Difesa basata sul mirror della slot nemica ---
 find_defensive_slot(Field, EnemyField, DefensiveSlot) :-
-    member(slot(EnemySlot, _), EnemyField), % Ricerca carte avversario
+    member(slot(EnemySlot, _, _), EnemyField), % Ricerca carte avversario
     mirrored_slot(EnemySlot, Mirror),
     \+ occupied_slot(Field, Mirror), % Uso not se lo slot non è occupato
     DefensiveSlot = Mirror, !.
@@ -91,10 +91,10 @@ find_offensive_slot(Field, EnemyField, AttackSlot) :-
 
 % --- Predicati ausiliari ---
 occupied_slot(Field, Slot) :- % Verifica se slot AI occupato
-    member(slot(Slot, _), Field).
+    member(slot(Slot, _, _), Field).
 
 enemy_slot(EnemyField, Slot) :- % Verifica se slot nemico occupato
-    member(slot(Slot, _), EnemyField).
+    member(slot(Slot, _, _), EnemyField).
 
 % --- Mappatura per i mirrored_slot ---
 mirrored_slot(4, 1).
@@ -172,7 +172,7 @@ evaluate(_Card, ATK, HP, Effects, _Subtype, _UpdateID, Score, IA_Slot, EnemyFiel
 
 attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffects) :- % Controlla se la carta AI ha davanti una dell'avversario
     mirrored_enemy_slot(IA_Slot, EnemySlot),
-    member(slot(EnemySlot, EnemyCard), EnemyField), % Recupera statistiche carta avversario
+    member(slot(EnemySlot, EnemyCard, _), EnemyField), % Recupera statistiche carta avversario
     troop(EnemyCard, EnemyATK, EnemyHP, EnemyEffects, _, _).
 
 % --- Esecuzione e stampa delle mosse ---
@@ -188,8 +188,6 @@ stampa_azione((Card, "PlayMethod")) :-
     format('Gioca il nuovo Method: ~w~n', [Card]).
 stampa_azione((Card, _, _, Slot)) :-
     format('Gioca(~w, ~w)~n', [Card, Slot]).
-stampa_azione((Card, "Scarta")) :-
-    format('Scarta la carta: ~w~n', [Card]).
 
 debug_message(Label, Data) :-
     format("DEBUG: ~w ~w~n", [Label, Data]).
@@ -203,10 +201,11 @@ esegui_update :-
           number(UpdateCard),
           troop(UpdateCard, _, _, _, _, UUpdateID),
           UUpdateID =\= 0,  % Verifica se in mano ci sono carte update
-          member(slot(Slot, FieldCard), Field),
+          member(slot(Slot, FieldCard, Played), Field),
           troop(FieldCard, _, _, _, FieldSubtype, FieldUpdateID),
           FieldUpdateID =:= 0,  % Controlla se nel campo ci sono truppe non aggiornate
-          UUpdateID =:= FieldSubtype  % corrispondenza tra UpdateID della carta e Subtype della truppa
+          UUpdateID =:= FieldSubtype, % corrispondenza tra UpdateID della carta e Subtype della truppa
+          Played =\= 0
         ),
         UpdatePairs),
     ( UpdatePairs = [] -> % Se non ci sono accoppiamenti per Updeate
