@@ -70,23 +70,18 @@ find_defensive_slot(Field, EnemyField, DefensiveSlot) :-
     DefensiveSlot = Mirror, !.
 find_defensive_slot(_, _, none).
 
-% --- Difesa Offensiva (scelta pseudocasuale degli slot disponibili) ---
+% --- Difesa Offensiva: scelta casuale tra tutti gli slot disponibili (davanti e dietro) ---
 find_offensive_slot(Field, EnemyField, AttackSlot) :-
-    findall(Candidate, ( % Raccoglie posizioni libere in prima fila
-        member(Candidate, [1,2,3,4]),
-        \+ occupied_slot(Field, Candidate), % Verifica che non sia occupato
-        \+ enemy_slot(EnemyField, Candidate) % Non occupato da nemici
-    ), OffensiveFrontSlots),
-    (   OffensiveFrontSlots \= [] ->
-            random_member(AttackSlot, OffensiveFrontSlots) % Scelta casuale
-    ;   findall(Candidate, ( % Ricerca slot in seconda fila
-            member(Candidate, [5,6,7,8]),
-            \+ occupied_slot(Field, Candidate)
-    ), OffensiveBackSlots),
-        (   OffensiveBackSlots \= [] ->
-                random_member(AttackSlot, OffensiveBackSlots)
-        ;   AttackSlot = none % Se non ci sono posizioni disponibili
-        )
+    findall(Candidate,
+            (
+                member(Candidate, [1,2,3,4,5,6,7,8]),
+                \+ occupied_slot(Field, Candidate),
+                \+ enemy_slot(EnemyField, Candidate)
+            ),
+            AvailableSlots),
+    ( AvailableSlots \= [] ->
+          random_member(AttackSlot, AvailableSlots)
+    ;   AttackSlot = none
     ).
 
 % --- Predicati ausiliari ---
@@ -194,28 +189,28 @@ stampa_azione((Card, "Scarta")) :-
 debug_message(Label, Data) :-
     format("DEBUG: ~w ~w~n", [Label, Data]).
 
-% --- Predicato per gestire le carte Update ---
 esegui_update :-
     game_state(hand_ia, Hand),
     game_state(field_ia, Field),
     findall((UpdateCard, Slot),
         ( member(UpdateCard, Hand),
           number(UpdateCard),
-          troop(UpdateCard, _, _, _, _, UUpdateID),
+          % Otteniamo anche la lista degli effetti della carta update
+          troop(UpdateCard, _, _, UpdateEffects, _, UUpdateID),
           UUpdateID =\= 0,  % Verifica se in mano ci sono carte update
-          % Seleziona solo slot legali (con flag = 0)
+          % Seleziona slot legali: oppure lo slot ha Flag = 0, oppure la carta ha l'effetto 14
           member(slot(Slot, FieldCard, Flag), Field),
-          Flag =:= 0,
+          ( Flag =:= 0 ; member(14, UpdateEffects) ),
           troop(FieldCard, _, _, _, FieldSubtype, FieldUpdateID),
           FieldUpdateID =:= 0,  % Controlla se nel campo ci sono truppe non aggiornate
           UUpdateID =:= FieldSubtype  % Corrispondenza tra UpdateID della carta e Subtype della truppa
         ),
         UpdatePairs),
-    ( UpdatePairs = [] ->  % Se non ci sono accoppiamenti per Update
+    ( UpdatePairs = [] ->
          format('Nessun Update giocabile~n')
     ;
-         random_member((ChosenUpdate, ChosenSlot), UpdatePairs),  % Se ce ne sono, sceglie casualmente
-         Move = (ChosenUpdate, 0, 0, ChosenSlot),  % La mossa ha lo stesso formato delle altre
+         random_member((ChosenUpdate, ChosenSlot), UpdatePairs),
+         Move = (ChosenUpdate, 0, 0, ChosenSlot),
          stampa_azione(Move)
     ),
     true.
