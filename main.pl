@@ -5,8 +5,8 @@
 
 % --- Predicato per aggiornare lo stato in maniera unica ---
 set_game_state(Key, Value) :-
-    retractall(game_state(Key, _)),
-    assert(game_state(Key, Value)).
+    retractall(game_state(Key, _)), % Rimuove la conoscenza delle clausole
+    assert(game_state(Key, Value)). % Aggiunge nuova clausola alla conoscenza
 
 % --- Stato iniziale del gioco ---
 set_game_state(hand_ia, []).
@@ -23,8 +23,8 @@ decide_action(BestMoves) :-
     game_state(field_ia, Field),
     game_state(field_enemy, EnemyField),
     (   % Se in mano esiste almeno una carta troop (numero)
-        member(Card, Hand),
-        number(Card)
+        member(Card, Hand), % Verifica se elemento appartiene alla lista
+        number(Card) % Verifica se è un numero
     ->  choose_slot(Field, EnemyField, SelectedSlot), % Sceglie slot
         ( SelectedSlot \= none -> % Sceglie migliore carta
              debug_message("Slot scelto: ", SelectedSlot),
@@ -72,7 +72,7 @@ find_defensive_slot(_, _, none).
 
 % --- Difesa Offensiva: scelta casuale tra tutti gli slot disponibili (davanti e dietro) ---
 find_offensive_slot(Field, EnemyField, AttackSlot) :-
-    findall(Candidate,
+    findall(Candidate, % Raccoglie chi soddisfa l'obbiettivo
             (
                 member(Candidate, [1,2,3,4,5,6,7,8]),
                 \+ occupied_slot(Field, Candidate),
@@ -174,6 +174,8 @@ attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffects) :- % C
 esegui(Azioni) :-
     decide_action(Azioni),
     forall(member(Azione, Azioni), stampa_azione(Azione)). % Itera su tutti gli elementi della lista Azioni
+% Vero se, per ogni soluzione generata dal primo membro, il secondo
+% risulta vero
 
 stampa_azione(("No Move", 0, 0, 0)) :-
     format('Gioca(No Move, 0, 0, 0)~n').
@@ -222,7 +224,7 @@ scarta_fine_turno :-
     (   NumCards > 7 ->
         Diff is NumCards - 7,
         % Mischia la mano e separa le carte da scartare (Diff) da quelle da tenere
-        random_permutation(Hand, ShuffledHand),
+        random_permutation(Hand, ShuffledHand), 
         length(Discarded, Diff),
         append(Discarded, NewHand, ShuffledHand),
         set_game_state(hand_ia, NewHand),
@@ -232,3 +234,4 @@ scarta_fine_turno :-
     ;   % Se non ci sono carte da scartare, stampa "Nessuno scarto!"
         format('Nessuno scarto!~n')
     ).
+
