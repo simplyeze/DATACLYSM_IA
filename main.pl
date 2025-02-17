@@ -166,7 +166,7 @@ evaluate(_Card, ATK, HP, Effects, _Subtype, _UpdateID, Score, IA_Slot, EnemyFiel
     Score is BaseScore + TotalBonus.
 
 attacked_enemy_card(IA_Slot, EnemyField, EnemyATK, EnemyHP, EnemyEffects) :- % Controlla se la carta AI ha davanti una carta dell'avversario
-    mirrored_enemy_slot(IA_Slot, EnemySlot),
+    mirrored_slot(IA_Slot, EnemySlot),
     member(slot(EnemySlot, EnemyCard, 0), EnemyField), % Recupera le statistiche della carta avversaria
     troop(EnemyCard, EnemyATK, EnemyHP, EnemyEffects, _, _).
 
@@ -191,6 +191,7 @@ stampa_azione((Card, "Scarta")) :-
 debug_message(Label, Data) :-
     format("DEBUG: ~w ~w~n", [Label, Data]).
 
+% --- Predicato per la chiamata da parte di Unity ---
 esegui_update :-
     game_state(hand_ia, Hand),
     game_state(field_ia, Field),
