@@ -1,23 +1,39 @@
-% Implementazione della libreria CSV
-:- use_module(library(csv)).
-
-% Lettura file CSV, 
-deck(File) :-
-	% Cambiare arity per valori necessari
-    csv_read_file(File, Rows, [functor(row), arity(5)]),
-    % Selezione carte "in"
-    findall(Card,
-            ( member(Row, Rows),
-			% Aggiungere valori necessari in ln12, ln15, ln16
-              Row = row(InField, Name, Atk, Hp, _Extra),
-              atom_string(InField, InFieldStr),
-              string_lower(InFieldStr, LowerInField),
-              sub_string(LowerInField, _, _, _, "in"),
-              Card = card(Name, Atk, Hp)
-            ),
-            CardList),
-			maplist(print_card, CardList).
-
-% Debug carte			
-print_card(Card):-
-	format("~w~n", [Card]).
+troop(001, 1, 1, [], 1, 0).
+troop(002, 2, 1, [2], 2, 0).
+troop(003, 0, 3, [], 3, 0).
+troop(004, 2, 1, [1], 4, 0).
+troop(005, 3, 3, [14], 1, 1).
+troop(006, 4, 1, [2, 14], 2, 2).
+troop(007, 2, 5, [], 3, 3).
+troop(008, 5, 4, [1, 6], 4, 4).
+troop(009, 2, 1, [3], 0, 0).
+troop(010, 1, 1, [8, 15], 7, 0).
+troop(011, 2, 1, [16], 7, 0).
+troop(012, 1, 1, [8, 5], 7, 0).
+troop(013, 0, 2, [7], 1, 0).
+troop(014, 1, 2, [1], 1, 0).
+troop(015, 3, 1, [5, 14], 1, 1).
+troop(016, 9, 14, [17, 3, 5], 1, 0).
+troop(017, 0, 1, [8, 9, 10, 5], 4, 0).
+troop(018, 0, 2, [9, 10, 5], 4, 0).
+troop(019, 4, 6, [4], 4, 4).
+troop(020, 3, 2, [14, 4], 4, 4).
+troop(021, 5, 3, [1, 12], 4, 4).
+troop(022, 6, 13, [17, 1, 3, 8, 15], 4, 0).
+troop(023, 1, 1, [11], 2, 0).
+troop(024, 1, 2, [12], 2, 0).
+troop(025, 6, 2, [2], 2, 2).
+troop(026, 3, 3, [2, 12],2 ,2).
+troop(027, 8, 4, [17, 11, 2, 3], 2, 0).
+troop(028, 1, 2, [13, 2, 12], 3, 0).
+troop(029, 3, 7, [7], 3, 3).
+troop(030, 4, 6, [12], 3, 3).
+troop(031, 4, 19, [17, 13, 4], 3, 0).
+troop(032, 1, 2, [], 6, 0).
+troop(033, 1, 1, [], 6,	0).
+troop(034, 2, 1, [12], 6, 0).
+troop(035, 0, 2, [4], 6, 0).
+troop(036, 1, 1, [4, 5], 6, 0).
+troop(037, 0, 3, [], 6, 0).
+troop(038, 2, 4, [17, 4], 6, 0).
+troop(039, 1, 1, [], 999, 0).
